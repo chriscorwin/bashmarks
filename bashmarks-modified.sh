@@ -41,7 +41,7 @@
 #
 # @notes
 # - Modifications to this file were made. Notably adding gsman comments, adding feedback when saving/deleting
-# a bashmark, and modifying the _purge_line function.
+# a bashmark, and modifying the _PURGE_THE_LINE function.
 # notes@
 ## */
 
@@ -54,12 +54,12 @@ touch $SDIRS
 # save current directory to bookmarks
 function s {
     check_help $1
-    _bookmark_name_valid "$@"
+    _bashmark_name_valid "$@"
     if [ -z "$exit_message" ]; then
-        _purge_line "$SDIRS" "export DIR_$1="
+        _PURGE_THE_LINE "$SDIRS" "export DIR_$1="
         CURDIR=$(echo $PWD| sed "s#^$HOME#\$HOME#g")
         echo "export DIR_$1=\"$CURDIR\"" >> $SDIRS
-        echo "Bashmark "${STYLE_BRIGHT}${COL_RED}"${1}"${X}" was saved!"
+        echo ${STYLE_SUCCESS}"Bashmark "${STYLE_INPUT}"${1}"${STYLE_SUCCESS}" was saved!"${X}
     fi
 }
 
@@ -67,7 +67,14 @@ function s {
 function go {
     check_help $1
     source $SDIRS
-    cd "$(eval $(echo echo $(echo \$DIR_$1)))"
+    target="$(eval $(echo echo $(echo \$DIR_$1)))"
+    if [ -d "$target" ]; then
+        cd "$target"
+    elif [ ! -n "$target" ]; then
+        echo ${STYLE_ERROR}"WARNING: bashmark "${STYLE_INPUT}"${1}"${STYLE_ERROR}" does not exist."${X}
+    else
+        echo ${STYLE_ERROR}"WARNING: target "${STYLE_INPUT}"${target}"${STYLE_ERROR}" does not exist."${X}
+    fi
 }
 
 # print bookmark
@@ -80,11 +87,11 @@ function p {
 # delete bookmark
 function d {
     check_help $1
-    _bookmark_name_valid "$@"
+    _bashmark_name_valid "$@"
     if [ -z "$exit_message" ]; then
-        _purge_line "$SDIRS" "export DIR_$1="
+        _PURGE_THE_LINE "$SDIRS" "export DIR_$1="
         unset "DIR_$1"
-        echo "Bashmark "${STYLE_BRIGHT}${COL_RED}"${1}"${X}" was deleted!"
+        echo ${STYLE_SUCCESS}"Bashmark "${STYLE_INPUT}"${1}"${STYLE_SUCCESS}" deleted (assuming it existed in the first place.'"${X}
     fi
 }
 
@@ -92,10 +99,10 @@ function d {
 function check_help {
     if [ "$1" = "-h" ] || [ "$1" = "-help" ] || [ "$1" = "--help" ] ; then
         echo ''
-        echo 's <bookmark_name> - Saves the current directory as "bookmark_name"'
-        echo 'go <bookmark_name> - Goes (cd) to the directory associated with "bookmark_name"'
-        echo 'p <bookmark_name> - Prints the directory associated with "bookmark_name"'
-        echo 'd <bookmark_name> - Deletes the bookmark'
+        echo ' s <bashmark_name> - Saves the current directory as "bashmark_name"'
+        echo 'go <bashmark_name> - Goes (cd) to the directory associated with "bashmark_name"'
+        echo ' p <bashmark_name> - Prints the directory associated with "bashmark_name"'
+        echo ' d <bashmark_name> - Deletes the bookmark'
         echo 'lb                 - Lists all available bookmarks'
         kill -SIGINT $$
     fi
@@ -107,26 +114,25 @@ function lb {
     source $SDIRS
 
     # if color output is not working for you, comment out the line below '\033[1;32m' == "red"
-    env | sort | awk '/DIR_.+/{split(substr($0,5),parts,"="); printf("\033[1;31m%-20s\033[0m %s\n", parts[1], parts[2]);}'
+    env | sort | awk '/^DIR_.+/{split(substr($0,5),parts,"="); printf("\033[0;33m%-20s\033[0m %s\n", parts[1], parts[2]);}'
 
     # uncomment this line if color output is not working with the line above
     # env | grep "^DIR_" | cut -c5- | sort |grep "^.*="
 }
-
 # list bookmarks without dirname
-function _lb {
+function _list_bashmarks_no_dirname {
     source $SDIRS
     env | grep "^DIR_" | cut -c5- | sort | grep "^.*=" | cut -f1 -d "="
 }
 
 # validate bookmark name
-function _bookmark_name_valid {
+function _bashmark_name_valid {
     exit_message=""
     if [ -z $1 ]; then
-        exit_message="bookmark name required"
+        exit_message="Bashmark name required"
         echo $exit_message
     elif [ "$1" != "$(echo $1 | sed 's/[^A-Za-z0-9_]//g')" ]; then
-        exit_message="bookmark name is not valid"
+        exit_message="Bashmark name is not valid"
         echo $exit_message
     fi
 }
@@ -136,29 +142,28 @@ function _comp {
     local curw
     COMPREPLY=()
     curw=${COMP_WORDS[COMP_CWORD]}
-    COMPREPLY=($(compgen -W '`_lb`' -- $curw))
+    COMPREPLY=($(compgen -W '`_list_bashmarks_no_dirname`' -- $curw))
     return 0
 }
 
 # ZSH completion command
 function _compzsh {
-    reply=($(_lb))
+    reply=($(_list_bashmarks_no_dirname))
 }
 
 # safe delete line from sdirs
-function _purge_line {
+function _PURGE_THE_LINE {
     if [ -s "$1" ]; then
         # safely create a temp file
-        t="${gitscripts_path}tmp1"
-        touch $t
-        trap "rm -f -- '$t'" EXIT
+        t=$(mktemp -t bashmarks.XXXXXX) || exit 1
+        trap "/bin/rm -f -- '$t'" EXIT
 
         # purge line
         sed "/$2/d" "$1" > "$t"
-        cp "$t" "$1"
+        /bin/mv "$t" "$1"
 
         # cleanup temp file
-        rm -f -- "$t"
+        /bin/rm -f -- "$t"
         trap - EXIT
     fi
 }
